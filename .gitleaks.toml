@@ -1,0 +1,12 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Public Dropbox client id and synthetic test fixtures"
+regexes = [
+  '''ydtsl7okrf4xuee''',
+]
+paths = [
+  '''tests/.*''',
+  '''uv\.lock''',
+]
