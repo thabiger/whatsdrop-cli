@@ -296,6 +296,7 @@ def test_save_and_load_credentials(tmp_path):
     assert loaded.access_token == "at"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permissions")
 def test_save_credentials_permissions(tmp_path):
     path = tmp_path / "creds.json"
     save_credentials(path, Credentials(app_key="k", refresh_token="r"))
@@ -309,6 +310,7 @@ def test_save_credentials_creates_parent(tmp_path):
     assert path.exists()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permissions")
 def test_save_credentials_creates_private_parent(tmp_path):
     path = tmp_path / "private" / "creds.json"
     save_credentials(path, Credentials(app_key="k", refresh_token="r"))
@@ -364,6 +366,7 @@ def test_save_credentials_overwrite(tmp_path):
 # --- default_credentials_path -----------------------------------------------
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX path behavior")
 def test_default_credentials_path_posix(monkeypatch):
     monkeypatch.setattr(os, "name", "posix")
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
@@ -372,6 +375,7 @@ def test_default_credentials_path_posix(monkeypatch):
     assert "whatsdrop" in str(path)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX path behavior")
 def test_default_credentials_path_xdg(monkeypatch):
     monkeypatch.setattr(os, "name", "posix")
     monkeypatch.setenv("XDG_CONFIG_HOME", "/custom/config")

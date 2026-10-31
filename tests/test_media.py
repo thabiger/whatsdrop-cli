@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import stat
 from pathlib import Path
 
+import pytest
 from conftest import A_JID, ACCOUNT, KEY, TOKEN, make_cfg, seed_archive, ts_at
 
 from whatsdrop_cli.cli import main
@@ -111,7 +113,8 @@ def test_query_exports_media(api, monkeypatch, tmp_path, capsys):
     assert path.exists()
     assert path.read_bytes() == b"\xff\xd8\xff\xe0full-resolution"
     assert path.suffix == ".jpg"
-    assert (path.stat().st_mode & 0o777) == 0o600
+    if os.name != "nt":
+        assert (path.stat().st_mode & 0o777) == 0o600
 
 
 def test_media_path_hash_mismatch(api, monkeypatch, tmp_path):
@@ -478,6 +481,7 @@ def test_context_media_skips_context_only_chats(api, monkeypatch, tmp_path):
     assert not (out / "manifest.ndjson").exists()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permissions")
 def test_write_manifest_sets_private_permissions(tmp_path):
     target = tmp_path / "manifest.ndjson"
     write_manifest(target, [{"msgId": "m1"}])

@@ -2,7 +2,10 @@
 useDefault = true
 
 [allowlist]
-description = "Synthetic test fixtures and lockfile hashes"
+description = "Public Dropbox client id and synthetic test fixtures"
+regexes = [
+  '''ydtsl7okrf4xuee''',
+]
 paths = [
   '''tests/.*''',
   '''uv\.lock''',

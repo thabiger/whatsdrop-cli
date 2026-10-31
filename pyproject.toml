@@ -23,7 +23,10 @@ classifiers = [
     "Topic :: Communications :: Chat",
     "Topic :: System :: Archiving :: Backup",
 ]
-dependencies = ["cryptography>=42"]
+dependencies = [
+    "cryptography>=42",
+    "tzdata>=2025.2; sys_platform == 'win32'",
+]
 
 [project.scripts]
 whatsdrop = "whatsdrop_cli.cli:main"

@@ -25,6 +25,9 @@ involved and Dropbox never sees plaintext chat content.
 - A Dropbox account connected to the same Dropbox app. The built-in app key is
   used by default.
 
+On Windows, the `tzdata` package is installed automatically so `--tz` can use
+IANA timezones.
+
 ## Install
 
 ```sh

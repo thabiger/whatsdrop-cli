@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import stat
 from datetime import timezone
+
+import pytest
 
 from whatsdrop_cli.media import write_manifest
 from whatsdrop_cli.output import render_csv, render_text, write_lines
@@ -47,12 +50,14 @@ def test_render_csv_prefixes_formula_cells():
     assert "'=HYPERLINK" in lines[1]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permissions")
 def test_write_lines_sets_private_permissions(tmp_path):
     target = tmp_path / "out.ndjson"
     write_lines(["line"], str(target))
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permissions")
 def test_write_manifest_sets_private_permissions(tmp_path):
     target = tmp_path / "manifest.ndjson"
     write_manifest(target, [{"msgId": "m1"}])
