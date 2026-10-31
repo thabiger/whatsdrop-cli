@@ -1,0 +1,9 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic test fixtures and lockfile hashes"
+paths = [
+  '''tests/.*''',
+  '''uv\.lock''',
+]
