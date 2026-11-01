@@ -60,6 +60,10 @@ jobs:
         with:
           name: dist
           path: dist/
-      - run: gh release create "${GITHUB_REF_NAME}" dist/* --generate-notes
+      - run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --generate-notes \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
