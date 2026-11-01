@@ -1,7 +1,7 @@
 [project]
 name = "whatsdrop-cli"
 version = "0.1.0"
-description = "Query an encrypted WhatsDrop archive in Dropbox by name/number and time window"
+description = "Query encrypted or plaintext WhatsDrop archives in Dropbox by name/number and time window"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]

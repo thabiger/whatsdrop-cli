@@ -28,7 +28,8 @@ Security-relevant areas include:
 
 - Dropbox OAuth and refresh-token handling.
 - Credential storage permissions and revocation.
-- Archive decryption and media path validation.
+- Archive mode detection, decryption and media path validation.
+- Plaintext archive handling and its unencrypted-archive warning.
 - Plaintext output and media export permissions.
 - Terminal control-character handling and CSV formula injection.
 - Dependency and release-pipeline integrity.

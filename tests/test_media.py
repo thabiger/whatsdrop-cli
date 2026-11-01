@@ -1,4 +1,4 @@
-"""Full-resolution media export from the encrypted archive."""
+"""Full-resolution media export from encrypted and plaintext archives."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from conftest import A_JID, ACCOUNT, KEY, TOKEN, make_cfg, seed_archive, ts_at
 
+from whatsdrop_cli.archive import ArchiveCodec
 from whatsdrop_cli.cli import main
 from whatsdrop_cli.crypto import (
     derive_keys,
@@ -18,7 +19,10 @@ from whatsdrop_cli.crypto import (
     encrypt_media,
     encrypt_text,
     media_hash,
+    plaintext_chat_hash,
+    plaintext_media_hash,
 )
+from whatsdrop_cli.dropbox import DropboxClient
 from whatsdrop_cli.fetch import _prefer
 from whatsdrop_cli.media import export_media, write_manifest
 
@@ -27,7 +31,7 @@ def _configure(monkeypatch, api):
     monkeypatch.setenv("WHATSDROP_DROPBOX_TOKEN", TOKEN)
     monkeypatch.setenv("WHATSDROP_KEY", KEY)
     monkeypatch.setenv("WHATSDROP_ACCOUNT", ACCOUNT)
-    monkeypatch.setenv("WHATSDROP_DROPBOX_BASE", api.endpoint)
+    monkeypatch.setenv("WHATSDROP_TEST_DROPBOX_BASE", api.endpoint)
 
 
 def _seed_media(
@@ -84,6 +88,53 @@ def _seed_media(
     return record, relative
 
 
+def _seed_plaintext_media(
+    api,
+    *,
+    msg_id="IMG-P",
+    payload=b"\xff\xd8\xff\xe0plaintext-resolution",
+    path_override=None,
+):
+    seed_archive(api, mode="plaintext")
+    chat_folder = plaintext_chat_hash(A_JID)
+    relative = (
+        path_override
+        or f"chat={chat_folder}/dt=2026-10-17/media-{plaintext_media_hash(msg_id)}.bin"
+    )
+    ts = ts_at(17, 15)
+    record = {
+        "v": 1,
+        "msgId": msg_id,
+        "chatId": A_JID,
+        "chatName": "Anna Schmidt",
+        "isGroup": False,
+        "direction": "in",
+        "senderName": "Anna",
+        "text": "photo",
+        "ts": ts,
+        "capturedAt": ts + 100,
+        "type": "image",
+        "source": "store",
+        "sortTs": ts,
+        "media": {
+            "status": "stored",
+            "kind": "image",
+            "mime": "image/jpeg",
+            "size": len(payload),
+            "width": 1600,
+            "height": 1200,
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "path": relative,
+            "capturedAt": ts + 100,
+        },
+    }
+    part = f"/account={ACCOUNT}/chat={chat_folder}/dt=2026-10-17/part-{ts}-{ts}-0.ndjson"
+    api.files[part] = (json.dumps(record) + "\n").encode("utf-8")
+    if path_override is None:
+        api.files[f"/account={ACCOUNT}/{relative}"] = payload
+    return record, relative
+
+
 def test_query_exports_media(api, monkeypatch, tmp_path, capsys):
     _configure(monkeypatch, api)
     _seed_media(api)
@@ -117,6 +168,57 @@ def test_query_exports_media(api, monkeypatch, tmp_path, capsys):
         assert (path.stat().st_mode & 0o777) == 0o600
 
 
+def test_query_exports_plaintext_media_without_key(api, monkeypatch, tmp_path):
+    monkeypatch.setenv("WHATSDROP_DROPBOX_TOKEN", TOKEN)
+    monkeypatch.setenv("WHATSDROP_ACCOUNT", ACCOUNT)
+    monkeypatch.setenv("WHATSDROP_TEST_DROPBOX_BASE", api.endpoint)
+    monkeypatch.delenv("WHATSDROP_KEY", raising=False)
+    _seed_plaintext_media(api)
+    out = tmp_path / "media"
+
+    code = main(
+        [
+            "query",
+            "--name",
+            "*Anna*",
+            "--from",
+            "2026-10-17",
+            "--to",
+            "2026-10-17",
+            "--tz",
+            "UTC",
+            "--quiet",
+            "--media-out",
+            str(out),
+        ]
+    )
+
+    assert code == 0
+    entries = [json.loads(line) for line in (out / "manifest.ndjson").read_text().splitlines()]
+    exported = [entry for entry in entries if entry["status"] == "exported"]
+    assert len(exported) == 1
+    path = out / exported[0]["file"].split("/")[-1]
+    assert path.read_bytes() == b"\xff\xd8\xff\xe0plaintext-resolution"
+
+
+def test_plaintext_media_path_must_use_bin(api, tmp_path):
+    chat_folder = plaintext_chat_hash(A_JID)
+    relative = f"chat={chat_folder}/dt=2026-10-17/media-{plaintext_media_hash('IMG-P')}.enc"
+    record, _ = _seed_plaintext_media(api, path_override=relative)
+    base = api.endpoint
+    cfg = make_cfg(
+        archive_key="",
+        api_base=f"{base}/2",
+        content_base=f"{base}/2",
+        token_url=f"{base}/oauth2/token",
+    )
+
+    entries = export_media(DropboxClient(cfg), cfg, ArchiveCodec("plaintext"), [record], tmp_path)
+
+    assert entries[0]["status"] == "failed"
+    assert "does not match archive mode" in entries[0]["error"]
+
+
 def test_media_path_hash_mismatch(api, monkeypatch, tmp_path):
     _configure(monkeypatch, api)
     _seed_media(
@@ -125,7 +227,7 @@ def test_media_path_hash_mismatch(api, monkeypatch, tmp_path):
     )
     base = api.endpoint
     cfg = make_cfg(api_base=f"{base}/2", content_base=f"{base}/2", token_url=f"{base}/oauth2/token")
-    keys = derive_keys(KEY)
+    codec = ArchiveCodec("encrypted", KEY)
     entry = {
         "msgId": "IMG-1",
         "ts": ts_at(17, 15),
@@ -139,7 +241,7 @@ def test_media_path_hash_mismatch(api, monkeypatch, tmp_path):
     }
     from whatsdrop_cli.dropbox import DropboxClient
 
-    entries = export_media(DropboxClient(cfg), cfg, keys, [entry], tmp_path)
+    entries = export_media(DropboxClient(cfg), cfg, codec, [entry], tmp_path)
     assert entries[0]["status"] == "failed"
     assert "mismatch" in entries[0]["error"]
 
@@ -174,10 +276,10 @@ def test_media_missing_object(api, monkeypatch, tmp_path):
     del api.files[f"/account={ACCOUNT}/{relative}"]
     base = api.endpoint
     cfg = make_cfg(api_base=f"{base}/2", content_base=f"{base}/2", token_url=f"{base}/oauth2/token")
-    keys = derive_keys(KEY)
+    codec = ArchiveCodec("encrypted", KEY)
     from whatsdrop_cli.dropbox import DropboxClient
 
-    entries = export_media(DropboxClient(cfg), cfg, keys, [record], tmp_path)
+    entries = export_media(DropboxClient(cfg), cfg, codec, [record], tmp_path)
     assert entries[0]["status"] == "failed"
     assert "not found" in entries[0]["error"]
 
@@ -221,10 +323,10 @@ def test_not_downloaded_media_is_skipped(api, monkeypatch, tmp_path):
     record["media"] = {"status": "not_downloaded", "kind": "image", "capturedAt": ts_at(17, 15)}
     base = api.endpoint
     cfg = make_cfg(api_base=f"{base}/2", content_base=f"{base}/2", token_url=f"{base}/oauth2/token")
-    keys = derive_keys(KEY)
+    codec = ArchiveCodec("encrypted", KEY)
     from whatsdrop_cli.dropbox import DropboxClient
 
-    entries = export_media(DropboxClient(cfg), cfg, keys, [record], tmp_path)
+    entries = export_media(DropboxClient(cfg), cfg, codec, [record], tmp_path)
     assert entries[0]["status"] == "skipped"
     assert "not_downloaded" in entries[0]["error"]
     assert not list(tmp_path.glob("*.jpg"))

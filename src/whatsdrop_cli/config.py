@@ -17,7 +17,6 @@ from .auth import (
     load_credentials,
     resolve_credentials_path,
 )
-from .crypto import is_valid_key
 from .errors import UsageError
 
 BOUND_RE = re.compile(
@@ -135,7 +134,7 @@ def resolve_auth(args) -> AuthConfig:
     if app_key is None:
         app_key = DEFAULT_APP_KEY or None
 
-    base = (os.environ.get("WHATSDROP_DROPBOX_BASE") or "").strip().rstrip("/")
+    base = (os.environ.get("WHATSDROP_TEST_DROPBOX_BASE") or "").strip().rstrip("/")
 
     return AuthConfig(
         app_key=app_key,
@@ -178,10 +177,6 @@ def load_config(args) -> DropboxConfig:
         return str(getattr(args, flag, None) or os.environ.get(env) or "").strip()
 
     archive_key = value("key", "WHATSDROP_KEY")
-    if not archive_key:
-        raise UsageError("archive encryption key required (--key or WHATSDROP_KEY)")
-    if not is_valid_key(archive_key):
-        raise UsageError("archive encryption key must be 32 bytes encoded as base64")
 
     account = value("account", "WHATSDROP_ACCOUNT") or DEFAULT_ACCOUNT
     if not ACCOUNT_RE.match(account):

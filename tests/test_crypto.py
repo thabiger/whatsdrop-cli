@@ -14,6 +14,8 @@ from whatsdrop_cli.crypto import (
     encrypt_media,
     is_valid_key,
     media_hash,
+    plaintext_chat_hash,
+    plaintext_media_hash,
 )
 
 KEY = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
@@ -30,6 +32,15 @@ def test_known_answer_vector():
     hash_key, enc_key = derive_keys(KEY)
     assert decrypt_text(enc_key, ENVELOPE) == "hello archive"
     assert chat_hash(hash_key, "49171234567@c.us") == "88bbb4101bc5c104"
+
+
+def test_plaintext_hash_known_answer_vector():
+    assert plaintext_chat_hash("49171234567@c.us") == "35ade4c8763f23ab"
+    assert plaintext_chat_hash("120363000000000000@g.us") == "121a9557d38e5e87"
+    assert (
+        plaintext_media_hash("ACE81BE4695181CE094591658F7D7844")
+        == "d174b2849828c3af9985e06a45e4628f"
+    )
 
 
 def test_media_known_answer_vector():

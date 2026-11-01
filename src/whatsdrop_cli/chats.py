@@ -9,8 +9,8 @@ from dataclasses import dataclass
 
 from cryptography.exceptions import InvalidTag
 
+from .archive import ArchiveCodec
 from .config import DropboxConfig
-from .crypto import chat_hash, decrypt_text
 from .errors import RemoteError, UsageError
 
 PHONE_SERVERS = {"c.us", "s.whatsapp.net"}
@@ -60,15 +60,15 @@ def _entry_from_document(document: dict, fallback_hash: str | None = None) -> Ch
     )
 
 
-def load_directory(client, cfg: DropboxConfig, keys: tuple[bytes, bytes]) -> list[ChatEntry]:
-    _, enc_key = keys
-    index_path = f"{cfg.account_root}/_chats/index.enc"
+def load_directory(client, cfg: DropboxConfig, codec: ArchiveCodec) -> list[ChatEntry]:
+    index_path = f"{cfg.account_root}/_chats/index{codec.chat_suffix}"
     payload = client.download(index_path)
     if payload is not None:
         try:
-            document = json.loads(decrypt_text(enc_key, payload))
+            document = json.loads(codec.decode_text(payload))
         except (ValueError, InvalidTag, json.JSONDecodeError) as exc:
-            raise RemoteError(f"chat index could not be decrypted: {exc}") from exc
+            action = "read" if codec.is_plaintext else "decrypted"
+            raise RemoteError(f"chat index could not be {action}: {exc}") from exc
         if not isinstance(document, dict):
             raise RemoteError("chat index has an invalid format")
         entries = [_entry_from_document(item) for item in document.get("chats", [])]
@@ -79,18 +79,18 @@ def load_directory(client, cfg: DropboxConfig, keys: tuple[bytes, bytes]) -> lis
         if item.get(".tag") != "file":
             continue
         name = item.get("name") or ""
-        if not name.endswith(".enc") or name == "index.enc":
+        if not name.endswith(codec.chat_suffix) or name == f"index{codec.chat_suffix}":
             continue
         data = client.download(item.get("path_display") or item.get("path_lower") or "")
         if data is None:
             continue
         try:
-            document = json.loads(decrypt_text(enc_key, data))
+            document = json.loads(codec.decode_text(data))
         except (ValueError, InvalidTag, json.JSONDecodeError):
             continue
         if not isinstance(document, dict):
             continue
-        entry = _entry_from_document(document, fallback_hash=name[: -len(".enc")])
+        entry = _entry_from_document(document, fallback_hash=name[: -len(codec.chat_suffix)])
         if entry:
             entries.append(entry)
     return entries
@@ -123,7 +123,7 @@ def select_chats(
     numbers: list[str],
     hashes: list[str],
     jids: list[str],
-    hash_key: bytes,
+    codec: ArchiveCodec,
 ) -> list[ChatEntry]:
     wanted_numbers = {_normalize_phone(number) for number in numbers}
     wanted_hashes = {value.strip().lower() for value in hashes if value.strip()}
@@ -159,7 +159,7 @@ def select_chats(
         if not any(entry.chat_id == jid for entry in selected):
             add(
                 ChatEntry(
-                    hash=chat_hash(hash_key, jid),
+                    hash=codec.chat_hash(jid),
                     chat_id=jid,
                     chat_name="unknown",
                     chat_phone=_jid_phone(jid),

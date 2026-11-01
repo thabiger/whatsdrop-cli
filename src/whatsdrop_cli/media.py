@@ -1,4 +1,4 @@
-"""Download, decrypt and export full-resolution media from the archive."""
+"""Download, decode or decrypt, and export full-resolution media."""
 
 from __future__ import annotations
 
@@ -12,12 +12,12 @@ from pathlib import Path
 
 from cryptography.exceptions import InvalidTag
 
+from .archive import ArchiveCodec
 from .config import DropboxConfig
-from .crypto import chat_hash, decrypt_media, derive_media_key, media_hash
 from .errors import RemoteError
 
 MEDIA_PATH_RE = re.compile(
-    r"^chat=([0-9a-f]{16})/dt=(\d{4}-\d{2}-\d{2})/media-([0-9a-f]{32})\.enc$"
+    r"^chat=([0-9a-f]{16})/dt=(\d{4}-\d{2}-\d{2})/media-([0-9a-f]{32})\.(enc|bin)$"
 )
 MAX_WORKERS = 4
 
@@ -55,19 +55,21 @@ def _timestamp(record: dict) -> int:
     return 0
 
 
-def _validate_path(record: dict, hash_key: bytes) -> tuple[str, str]:
+def _validate_path(record: dict, codec: ArchiveCodec) -> tuple[str, str]:
     media = record.get("media") if isinstance(record.get("media"), dict) else {}
     path = str(media.get("path") or "").strip()
     match = MEDIA_PATH_RE.match(path)
     if not match:
         raise ValueError("invalid media path")
+    if f".{match.group(4)}" != codec.media_suffix:
+        raise ValueError("media path does not match archive mode")
 
     chat_id = record.get("chatId")
     if not isinstance(chat_id, str) or not chat_id:
         raise ValueError("media record has no chat id")
-    if match.group(1) != chat_hash(hash_key, chat_id):
+    if match.group(1) != codec.chat_hash(chat_id):
         raise ValueError("media path chat hash mismatch")
-    if match.group(3) != media_hash(hash_key, str(record.get("msgId") or "")):
+    if match.group(3) != codec.media_hash(str(record.get("msgId") or "")):
         raise ValueError("media path message hash mismatch")
     return path, match.group(2)
 
@@ -96,15 +98,13 @@ def _write_media(out_dir: Path, record: dict, data: bytes, mime: str | None) -> 
 def export_media(
     client,
     cfg: DropboxConfig,
-    keys: tuple[bytes, bytes],
+    codec: ArchiveCodec,
     records: list[dict],
     out_dir: str | Path,
     *,
     max_bytes: int = 25 * 1024 * 1024,
     fail_fast: bool = False,
 ) -> list[dict]:
-    hash_key, _ = keys
-    media_key = derive_media_key(cfg.archive_key)
     directory = Path(out_dir)
     try:
         directory.mkdir(parents=True, exist_ok=True)
@@ -134,7 +134,7 @@ def export_media(
             entry["error"] = f"media status {media.get('status') or 'unknown'}"
             return entry
         try:
-            relative, _day = _validate_path(record, hash_key)
+            relative, _day = _validate_path(record, codec)
             expected_size = media.get("size")
             if isinstance(expected_size, (int, float)) and expected_size > max_bytes:
                 entry["error"] = "media exceeds size limit"
@@ -144,7 +144,7 @@ def export_media(
                 entry["status"] = "failed"
                 entry["error"] = "media object not found"
                 return entry
-            plaintext = decrypt_media(media_key, relative, payload)
+            plaintext = codec.decode_media(relative, payload)
             if isinstance(expected_size, (int, float)) and len(plaintext) != int(expected_size):
                 raise ValueError("media size mismatch")
             expected_hash = media.get("sha256")
