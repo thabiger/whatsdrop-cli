@@ -1,4 +1,4 @@
-"""whatsdrop command line interface (encrypted Dropbox archive)."""
+"""whatsdrop command line interface (encrypted or plaintext Dropbox archive)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import __version__
+from .archive import ArchiveCodec, resolve_archive
 from .auth import (
     Credentials,
     delete_credentials,
@@ -35,7 +36,6 @@ from .context import (
     render_chunks_ndjson,
     render_chunks_text,
 )
-from .crypto import derive_keys
 from .dropbox import DropboxClient
 from .errors import CliError, NoMatchesError, RemoteError, UsageError
 from .fetch import collect, plan_tasks
@@ -43,6 +43,9 @@ from .media import export_media, write_manifest
 from .output import render, safe_cell, write_lines
 
 CHAT_HEADERS = ["NAME", "PHONE", "TYPE", "HASH", "CHAT ID"]
+PLAINTEXT_WARNING = (
+    "whatsdrop: warning: archive is unencrypted (plaintext); anyone with Dropbox access can read it"
+)
 
 
 def _add_window_arguments(parser: argparse.ArgumentParser) -> None:
@@ -69,7 +72,7 @@ def _add_window_arguments(parser: argparse.ArgumentParser) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="whatsdrop",
-        description="Query an encrypted WhatsApp archive stored in a Dropbox app folder.",
+        description="Query an encrypted or plaintext WhatsApp archive stored in a Dropbox app folder.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -86,7 +89,10 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument(
         "--credentials-file", help="Dropbox credentials file (or WHATSDROP_CREDENTIALS)"
     )
-    common.add_argument("--key", help="archive encryption key, base64 32 bytes (or WHATSDROP_KEY)")
+    common.add_argument(
+        "--key",
+        help="archive encryption key for encrypted archives, base64 32 bytes (or WHATSDROP_KEY)",
+    )
     common.add_argument(
         "--account", help="account alias folder (or WHATSDROP_ACCOUNT; default: primary)"
     )
@@ -233,9 +239,13 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _load(args):
+def _open_archive(args):
     cfg = load_config(args)
-    return cfg, DropboxClient(cfg), derive_keys(cfg.archive_key)
+    client = DropboxClient(cfg)
+    codec = resolve_archive(client, cfg)
+    if codec.is_plaintext:
+        print(PLAINTEXT_WARNING, file=sys.stderr)
+    return cfg, client, codec
 
 
 def _print_chats(entries: list[ChatEntry]) -> None:
@@ -265,9 +275,9 @@ def _has_selectors(args) -> bool:
     return bool(args.name or args.number or args.chat or args.jid)
 
 
-def _selected_chats(args, entries: list[ChatEntry], keys: tuple[bytes, bytes]) -> list[ChatEntry]:
+def _selected_chats(args, entries: list[ChatEntry], codec: ArchiveCodec) -> list[ChatEntry]:
     if _has_selectors(args):
-        selected = select_chats(entries, args.name, args.number, args.chat, args.jid, keys[0])
+        selected = select_chats(entries, args.name, args.number, args.chat, args.jid, codec)
         if not selected:
             raise NoMatchesError("no chats matched the selectors; try `whatsdrop chats --name '*'`")
         return selected
@@ -276,11 +286,10 @@ def _selected_chats(args, entries: list[ChatEntry], keys: tuple[bytes, bytes]) -
     return entries
 
 
-def _run_chats(args, cfg: DropboxConfig) -> int:
-    client = DropboxClient(cfg)
-    keys = derive_keys(cfg.archive_key)
-    entries = load_directory(client, cfg, keys)
-    selected = select_chats(entries, args.name, args.number, args.chat, args.jid, keys[0])
+def _run_chats(args) -> int:
+    cfg, client, codec = _open_archive(args)
+    entries = load_directory(client, cfg, codec)
+    selected = select_chats(entries, args.name, args.number, args.chat, args.jid, codec)
 
     if not entries:
         raise NoMatchesError("chat directory is empty (has anything been uploaded yet?)")
@@ -291,13 +300,11 @@ def _run_chats(args, cfg: DropboxConfig) -> int:
     return 0
 
 
-def _run_query(args, cfg: DropboxConfig) -> int:
+def _run_query(args) -> int:
+    cfg, client, codec = _open_archive(args)
     window = resolve_window(args.from_text, args.to_text, args.last_text, cfg.tz)
-
-    client = DropboxClient(cfg)
-    keys = derive_keys(cfg.archive_key)
-    entries = load_directory(client, cfg, keys)
-    selected = _selected_chats(args, entries, keys)
+    entries = load_directory(client, cfg, codec)
+    selected = _selected_chats(args, entries, codec)
 
     if not args.quiet:
         print(f"whatsdrop: window {window.label}", file=sys.stderr)
@@ -306,11 +313,11 @@ def _run_query(args, cfg: DropboxConfig) -> int:
         else:
             print(f"whatsdrop: all chats ({len(selected)})", file=sys.stderr)
 
-    tasks = plan_tasks(client, cfg, selected, window)
+    tasks = plan_tasks(client, cfg, codec, selected, window)
     if not args.quiet:
         print(f"whatsdrop: {len(tasks)} part object(s) in range", file=sys.stderr)
 
-    records = collect(client, cfg, keys, tasks, window)
+    records = collect(client, cfg, codec, tasks, window)
     if not records:
         raise NoMatchesError("no archived messages found for the matched chats in this window")
 
@@ -323,7 +330,7 @@ def _run_query(args, cfg: DropboxConfig) -> int:
         entries = export_media(
             client,
             cfg,
-            keys,
+            codec,
             records,
             args.media_out,
             max_bytes=args.media_max_bytes,
@@ -346,7 +353,8 @@ def _run_query(args, cfg: DropboxConfig) -> int:
     return 0
 
 
-def _run_context(args, cfg: DropboxConfig) -> int:
+def _run_context(args) -> int:
+    cfg, client, codec = _open_archive(args)
     analysis = resolve_window(args.from_text, args.to_text, args.last_text, cfg.tz)
     context_before = parse_context_before(args.context_before)
     context_ms = int(context_before.total_seconds() * 1000)
@@ -367,10 +375,8 @@ def _run_context(args, cfg: DropboxConfig) -> int:
     else:
         fetch_window = analysis
 
-    client = DropboxClient(cfg)
-    keys = derive_keys(cfg.archive_key)
-    entries = load_directory(client, cfg, keys)
-    selected = _selected_chats(args, entries, keys)
+    entries = load_directory(client, cfg, codec)
+    selected = _selected_chats(args, entries, codec)
 
     if not args.quiet:
         print(f"whatsdrop: analysis window {analysis.label}", file=sys.stderr)
@@ -381,11 +387,11 @@ def _run_context(args, cfg: DropboxConfig) -> int:
         else:
             print(f"whatsdrop: all chats ({len(selected)})", file=sys.stderr)
 
-    tasks = plan_tasks(client, cfg, selected, fetch_window)
+    tasks = plan_tasks(client, cfg, codec, selected, fetch_window)
     if not args.quiet:
         print(f"whatsdrop: {len(tasks)} part object(s) in range", file=sys.stderr)
 
-    records = collect(client, cfg, keys, tasks, fetch_window)
+    records = collect(client, cfg, codec, tasks, fetch_window)
     threads = group_records(records, selected, analysis)
     if not threads:
         raise NoMatchesError(
@@ -400,7 +406,7 @@ def _run_context(args, cfg: DropboxConfig) -> int:
         media_entries = export_media(
             client,
             cfg,
-            keys,
+            codec,
             media_records,
             media_dir,
             max_bytes=args.media_max_bytes,
@@ -625,12 +631,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "auth":
             return _run_auth(args)
-        cfg = load_config(args)
         if args.command == "chats":
-            return _run_chats(args, cfg)
+            return _run_chats(args)
         if args.command == "context":
-            return _run_context(args, cfg)
-        return _run_query(args, cfg)
+            return _run_context(args)
+        return _run_query(args)
     except CliError as exc:
         print(f"whatsdrop: {exc}", file=sys.stderr)
         return exc.exit_code

@@ -9,8 +9,8 @@ uv sync
 uv run pytest -q
 ```
 
-The test suite uses a local fake Dropbox server and encrypted fixtures. It does
-not need a Dropbox account, network access, or real chat data.
+The test suite uses a local fake Dropbox server and encrypted and plaintext
+fixtures. It does not need a Dropbox account, network access, or real chat data.
 
 ## Before opening a pull request
 

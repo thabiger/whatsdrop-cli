@@ -154,7 +154,7 @@ def _env(monkeypatch, **values):
         "WHATSDROP_KEY",
         "WHATSDROP_ACCOUNT",
         "WHATSDROP_FOLDER",
-        "WHATSDROP_DROPBOX_BASE",
+        "WHATSDROP_TEST_DROPBOX_BASE",
         "WHATSDROP_CREDENTIALS",
     ):
         monkeypatch.delenv(name, raising=False)
@@ -241,14 +241,16 @@ def test_load_config_requires_credentials(monkeypatch, tmp_path):
         load_config(_Args())
 
 
-def test_load_config_requires_valid_key(monkeypatch):
+def test_load_config_accepts_missing_key(monkeypatch):
     _env(monkeypatch, WHATSDROP_DROPBOX_TOKEN="token-123")
-    with pytest.raises(UsageError, match="archive encryption key required"):
-        load_config(_Args())
+    cfg = load_config(_Args())
+    assert cfg.archive_key == ""
 
+
+def test_load_config_preserves_key(monkeypatch):
     _env(monkeypatch, WHATSDROP_DROPBOX_TOKEN="token-123", WHATSDROP_KEY="not-a-key")
-    with pytest.raises(UsageError, match="must be 32 bytes"):
-        load_config(_Args())
+    cfg = load_config(_Args())
+    assert cfg.archive_key == "not-a-key"
 
 
 def test_load_config_rejects_bad_account(monkeypatch):

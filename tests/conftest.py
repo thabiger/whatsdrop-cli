@@ -12,9 +12,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from whatsdrop_cli.chats import chat_hash
 from whatsdrop_cli.config import DropboxConfig
-from whatsdrop_cli.crypto import derive_keys, encrypt_text
+from whatsdrop_cli.crypto import chat_hash, derive_keys, encrypt_text, plaintext_chat_hash
 
 KEY = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
 TOKEN = "test-dropbox-token"
@@ -275,13 +274,49 @@ class FakeDropbox:
         handler.wfile.write(payload)
 
 
-def seed_archive(api: FakeDropbox, key: str = KEY) -> dict[str, str]:
-    hash_key, enc_key = derive_keys(key)
-    hashes = {
-        "a": chat_hash(hash_key, A_JID),
-        "lid": chat_hash(hash_key, LID_JID),
-        "group": chat_hash(hash_key, GROUP_JID),
+def format_document(mode: str = "encrypted") -> dict:
+    encrypted = mode == "encrypted"
+    document = {
+        "format": 3,
+        "layout": "wa-archive",
+        "mode": mode,
+        "encryption": "aes-256-gcm" if encrypted else "none",
+        "chatHash": "hmac-sha256-16" if encrypted else "sha256-16",
+        "media": {
+            "layout": "wa-media-v1",
+            "encryption": "aes-256-gcm" if encrypted else "none",
+            "hash": "hmac-sha256-32" if encrypted else "sha256-32",
+        },
     }
+    if encrypted:
+        document["keyDerivation"] = "hkdf-sha256"
+        document["media"]["keyDerivation"] = "hkdf-sha256"
+    else:
+        document["objectEncoding"] = "utf-8"
+    return document
+
+
+def seed_archive(
+    api: FakeDropbox,
+    key: str = KEY,
+    mode: str = "encrypted",
+    format_marker: bool = True,
+) -> dict[str, str]:
+    plaintext = mode == "plaintext"
+    if plaintext:
+        enc_key = None
+        hashes = {
+            "a": plaintext_chat_hash(A_JID),
+            "lid": plaintext_chat_hash(LID_JID),
+            "group": plaintext_chat_hash(GROUP_JID),
+        }
+    else:
+        hash_key, enc_key = derive_keys(key)
+        hashes = {
+            "a": chat_hash(hash_key, A_JID),
+            "lid": chat_hash(hash_key, LID_JID),
+            "group": chat_hash(hash_key, GROUP_JID),
+        }
     chats = [
         {
             "hash": hashes["a"],
@@ -314,26 +349,41 @@ def seed_archive(api: FakeDropbox, key: str = KEY) -> dict[str, str]:
             "lastSeen": ts_at(17),
         },
     ]
+    chat_suffix = ".json" if plaintext else ".enc"
+    part_suffix = ".ndjson" if plaintext else ".enc"
 
-    api.files[f"/account={ACCOUNT}/_chats/index.enc"] = encrypt_text(
-        enc_key, json.dumps({"generatedAt": "2026-10-17T12:00:00Z", "chats": chats})
-    )
+    def encode(text: str) -> bytes:
+        if plaintext:
+            return text.encode("utf-8")
+        assert enc_key is not None
+        return encrypt_text(enc_key, text)
+
+    if format_marker:
+        api.files[f"/account={ACCOUNT}/_format.json"] = json.dumps(format_document(mode)).encode(
+            "utf-8"
+        )
+
+    index_document = {
+        "generatedAt": "2026-10-17T12:00:00Z",
+        "mode": mode,
+        "chats": chats,
+    }
+    api.files[f"/account={ACCOUNT}/_chats/index{chat_suffix}"] = encode(json.dumps(index_document))
     for chat in chats:
         payload = {k: v for k, v in chat.items() if k != "hash"}
-        api.files[f"/account={ACCOUNT}/_chats/{chat['hash']}.enc"] = encrypt_text(
-            enc_key, json.dumps(payload)
+        api.files[f"/account={ACCOUNT}/_chats/{chat['hash']}{chat_suffix}"] = encode(
+            json.dumps(payload)
         )
 
     def put_part(chat_hash_value: str, day: str, name: str, records: list[dict]) -> None:
         body = "\n".join(json.dumps(record) for record in records) + "\n"
-        api.files[f"/account={ACCOUNT}/chat={chat_hash_value}/dt={day}/{name}"] = encrypt_text(
-            enc_key, body
-        )
+        path = f"/account={ACCOUNT}/chat={chat_hash_value}/dt={day}/{name}{part_suffix}"
+        api.files[path] = encode(body)
 
     put_part(
         hashes["a"],
         "2026-10-16",
-        "part-1792195140000-0.enc",
+        "part-1792195140000-0",
         [
             message(
                 "A1",
@@ -347,7 +397,7 @@ def seed_archive(api: FakeDropbox, key: str = KEY) -> dict[str, str]:
     put_part(
         hashes["a"],
         "2026-10-17",
-        "part-1792228800000-0.enc",
+        "part-1792228800000-1792228800000-0",
         [
             message(
                 "A2",
@@ -362,7 +412,7 @@ def seed_archive(api: FakeDropbox, key: str = KEY) -> dict[str, str]:
     put_part(
         hashes["a"],
         "2026-10-17",
-        "part-1792228800000-1.enc",
+        "part-1792228800000-1792228800000-1",
         [
             message(
                 "A2",
@@ -378,7 +428,7 @@ def seed_archive(api: FakeDropbox, key: str = KEY) -> dict[str, str]:
     put_part(
         hashes["a"],
         "2026-10-17",
-        "part-1792228800000-2.enc",
+        "part-1792228800000-1792228800000-2",
         [
             message(
                 "A2",
@@ -393,7 +443,7 @@ def seed_archive(api: FakeDropbox, key: str = KEY) -> dict[str, str]:
     put_part(
         hashes["lid"],
         "2026-10-17",
-        "part-1792228800000-0.enc",
+        "part-1792228800000-1792228800000-0",
         [
             message(
                 "L1",
@@ -409,7 +459,7 @@ def seed_archive(api: FakeDropbox, key: str = KEY) -> dict[str, str]:
     put_part(
         hashes["group"],
         "2026-10-17",
-        "part-1792228800000-0.enc",
+        "part-1792228800000-1792228800000-0",
         [
             message(
                 "G1",
@@ -424,6 +474,10 @@ def seed_archive(api: FakeDropbox, key: str = KEY) -> dict[str, str]:
     return hashes
 
 
+def seed_plaintext_archive(api: FakeDropbox) -> dict[str, str]:
+    return seed_archive(api, mode="plaintext")
+
+
 @pytest.fixture()
 def api():
     server = FakeDropbox().start()
@@ -434,4 +488,10 @@ def api():
 @pytest.fixture()
 def seeded(api):
     seed_archive(api)
+    return api
+
+
+@pytest.fixture()
+def seeded_plaintext(api):
+    seed_plaintext_archive(api)
     return api

@@ -8,15 +8,22 @@ import pytest
 from conftest import ACCOUNT, APP_KEY, KEY, REFRESH_TOKEN, TOKEN
 
 from whatsdrop_cli.auth import Credentials, save_credentials
-from whatsdrop_cli.chats import chat_hash
 from whatsdrop_cli.cli import main
+from whatsdrop_cli.crypto import chat_hash, derive_keys
 
 
 def _configure(monkeypatch, api, token=TOKEN, key=KEY):
     monkeypatch.setenv("WHATSDROP_DROPBOX_TOKEN", token)
     monkeypatch.setenv("WHATSDROP_KEY", key)
     monkeypatch.setenv("WHATSDROP_ACCOUNT", ACCOUNT)
-    monkeypatch.setenv("WHATSDROP_DROPBOX_BASE", api.endpoint)
+    monkeypatch.setenv("WHATSDROP_TEST_DROPBOX_BASE", api.endpoint)
+
+
+def _configure_plaintext(monkeypatch, api):
+    monkeypatch.setenv("WHATSDROP_DROPBOX_TOKEN", TOKEN)
+    monkeypatch.setenv("WHATSDROP_ACCOUNT", ACCOUNT)
+    monkeypatch.setenv("WHATSDROP_TEST_DROPBOX_BASE", api.endpoint)
+    monkeypatch.delenv("WHATSDROP_KEY", raising=False)
 
 
 def _query(*extra, tz="UTC"):
@@ -117,7 +124,6 @@ def test_chats_command_filtered(seeded, monkeypatch, capsys):
 
 def test_chats_command_unknown_jid(seeded, monkeypatch, capsys):
     _configure(monkeypatch, seeded)
-    from whatsdrop_cli.crypto import derive_keys
 
     code = main(["chats", "--jid", "49111111111@c.us", "--quiet"])
 
@@ -196,7 +202,7 @@ def test_invalid_token(seeded, monkeypatch):
 
 def test_missing_encryption_key(seeded, monkeypatch, capsys):
     monkeypatch.setenv("WHATSDROP_DROPBOX_TOKEN", TOKEN)
-    monkeypatch.setenv("WHATSDROP_DROPBOX_BASE", seeded.endpoint)
+    monkeypatch.setenv("WHATSDROP_TEST_DROPBOX_BASE", seeded.endpoint)
     monkeypatch.delenv("WHATSDROP_KEY", raising=False)
 
     code = main(["chats", "--quiet"])
@@ -210,6 +216,47 @@ def test_wrong_encryption_key(seeded, monkeypatch):
     code = main(["chats", "--quiet"])
 
     assert code == 5
+
+
+def test_query_plaintext_without_key(seeded_plaintext, monkeypatch, capsys):
+    _configure_plaintext(monkeypatch, seeded_plaintext)
+    code = _query("--name", "*Anna*", "--from", "2026-10-16", "--to", "2026-10-17")
+
+    assert code == 0
+    records = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
+    assert [record["msgId"] for record in records] == ["A1", "A2"]
+    assert records[1]["text"] == "repaired copy"
+
+
+def test_chats_plaintext_warning_is_not_suppressed_by_quiet(seeded_plaintext, monkeypatch, capsys):
+    _configure_plaintext(monkeypatch, seeded_plaintext)
+    code = main(["chats", "--quiet"])
+
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "Anna Schmidt" in captured.out
+    assert "archive is unencrypted (plaintext)" in captured.err
+
+
+def test_plaintext_ignores_a_valid_key(seeded_plaintext, monkeypatch, capsys):
+    _configure(monkeypatch, seeded_plaintext, key=KEY)
+    code = _query("--name", "*Anna*", "--from", "2026-10-17", "--to", "2026-10-17")
+
+    assert code == 0
+    records = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
+    assert [record["msgId"] for record in records] == ["A2"]
+
+
+def test_legacy_archive_without_format_marker(api, monkeypatch, capsys):
+    from conftest import seed_archive
+
+    seed_archive(api, format_marker=False)
+    _configure(monkeypatch, api)
+    code = _query("--name", "*Anna*", "--from", "2026-10-17", "--to", "2026-10-17")
+
+    assert code == 0
+    records = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
+    assert [record["msgId"] for record in records] == ["A2"]
 
 
 def test_query_all_chats_without_selectors(seeded, monkeypatch, capsys):
@@ -245,6 +292,19 @@ def test_midnight_window_downloads_only_overlapping_parts(seeded, monkeypatch, c
     assert [record["msgId"] for record in records] == ["A1"]
     part_downloads = [key for key in seeded.download_calls if "/chat=" in key]
     assert len(part_downloads) == 1, part_downloads
+
+
+def test_context_plaintext_without_key(seeded_plaintext, monkeypatch, capsys):
+    _configure_plaintext(monkeypatch, seeded_plaintext)
+    code = _context("--from", "2026-10-16", "--to", "2026-10-17")
+
+    assert code == 0
+    chunks = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
+    assert {chunk["chat"]["name"] for chunk in chunks} == {
+        "Anna Schmidt",
+        "Bob LID",
+        "Family Group",
+    }
 
 
 def test_context_groups_by_chat(seeded, monkeypatch, capsys):
@@ -447,7 +507,7 @@ def _configure_auth(monkeypatch, api, path):
     monkeypatch.delenv("WHATSDROP_DROPBOX_TOKEN", raising=False)
     monkeypatch.delenv("WHATSDROP_DROPBOX_REFRESH_TOKEN", raising=False)
     monkeypatch.setenv("WHATSDROP_CREDENTIALS", str(path))
-    monkeypatch.setenv("WHATSDROP_DROPBOX_BASE", api.endpoint)
+    monkeypatch.setenv("WHATSDROP_TEST_DROPBOX_BASE", api.endpoint)
 
 
 def test_revoke_keeps_credentials_on_remote_error(seeded, monkeypatch, tmp_path, capsys):

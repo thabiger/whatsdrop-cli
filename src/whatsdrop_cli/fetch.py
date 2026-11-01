@@ -1,4 +1,4 @@
-"""Range planning, Dropbox downloads, decryption, filtering and dedupe."""
+"""Range planning, Dropbox downloads, decoding, filtering and dedupe."""
 
 from __future__ import annotations
 
@@ -10,13 +10,13 @@ from datetime import date, datetime, timedelta
 
 from cryptography.exceptions import InvalidTag
 
+from .archive import ArchiveCodec
 from .chats import ChatEntry
 from .config import DropboxConfig, Window
-from .crypto import decrypt_text
 from .errors import GuardError, NoMatchesError, RemoteError
 
 MAX_WORKERS = 4
-PART_RE = re.compile(r"^part-(\d+)(?:-(\d+))?-(\d+)\.enc$")
+PART_RE = re.compile(r"^part-(\d+)(?:-(\d+))?-(\d+)\.(enc|ndjson)$")
 
 
 @dataclass(frozen=True)
@@ -63,9 +63,12 @@ def _dt_from_folder(name: str) -> date | None:
         return None
 
 
-def parse_part_name(name: str):
-    """Return (first_ts, last_ts|None, seq) for part-<first>[-<last>]-<seq>.enc."""
-    match = PART_RE.match(name or "")
+def parse_part_name(name: str, suffix: str | None = None):
+    """Return (first_ts, last_ts|None, seq) for a part object."""
+    name = name or ""
+    if suffix is not None and not name.endswith(suffix):
+        return None
+    match = PART_RE.match(name)
     if not match:
         return None
     first_ts = int(match.group(1))
@@ -121,7 +124,7 @@ def _select_parts(parts: list[dict], window: Window) -> list[dict]:
 
 
 def plan_tasks(
-    client, cfg: DropboxConfig, chats: list[ChatEntry], window: Window
+    client, cfg: DropboxConfig, codec: ArchiveCodec, chats: list[ChatEntry], window: Window
 ) -> list[FetchTask]:
     low = datetime.fromtimestamp(window.start_ms / 1000, tz=cfg.tz).date() - timedelta(days=1)
     high = datetime.fromtimestamp(window.end_ms / 1000, tz=cfg.tz).date() + timedelta(days=1)
@@ -142,7 +145,7 @@ def plan_tasks(
             for part in client.list_folder(folder_path):
                 if part.get(".tag") != "file":
                     continue
-                parsed = parse_part_name(part.get("name") or "")
+                parsed = parse_part_name(part.get("name") or "", codec.part_suffix)
                 if parsed is None:
                     continue
                 path = part.get("path_display") or part.get("path_lower") or ""
@@ -178,18 +181,17 @@ def _parse_part(text: str, key: str) -> list[dict]:
 
 
 def collect(
-    client, cfg: DropboxConfig, keys: tuple[bytes, bytes], tasks: list[FetchTask], window: Window
+    client, cfg: DropboxConfig, codec: ArchiveCodec, tasks: list[FetchTask], window: Window
 ) -> list[dict]:
-    _, enc_key = keys
-
     def fetch(task: FetchTask):
         payload = client.download(task.key)
         if payload is None:
             return task.key, None
         try:
-            return task.key, decrypt_text(enc_key, payload)
+            return task.key, codec.decode_text(payload)
         except (ValueError, InvalidTag) as exc:
-            raise RemoteError(f"cannot decrypt {task.key}: {exc}") from exc
+            action = "read" if codec.is_plaintext else "decrypt"
+            raise RemoteError(f"cannot {action} {task.key}: {exc}") from exc
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         payloads = list(pool.map(fetch, tasks))
