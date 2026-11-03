@@ -40,8 +40,18 @@ is not installed. From a source checkout, use `uv sync --extra mcp`.
    whatsdrop auth
    ```
 
-2. Place the archive key in the CLI environment file. The MCP server reads it
+2. Store the archive key in the CLI environment file. The MCP server reads it
    automatically when `WHATSDROP_KEY` is not already set:
+
+   ```sh
+   whatsdrop config
+   ```
+
+   This prompts for the key without echoing it, then for the account alias.
+   On a rerun, the existing values are offered as defaults; press Enter to keep
+   the key (`[keep existing]`, never printed) or the existing alias. The file is
+   written with mode `0600`. Use `--account work` for a non-primary alias. The
+   result is:
 
    ```sh
    # ~/.config/whatsdrop/env  (must be 0600)

@@ -166,6 +166,9 @@ listings.
 ## Usage
 
 ```sh
+# store the archive key and account for MCP and headless use
+whatsdrop config
+
 # list chats (no messages fetched): names, phones, hashes, jids
 whatsdrop chats
 whatsdrop chats --name "*Family*"
@@ -279,7 +282,19 @@ window, `4` `--max-parts` guard tripped, `5` Dropbox/network/archive read error.
 
 The CLI auto-refreshes access tokens from the stored refresh token, so no manual
 rotation is needed. Run `whatsdrop auth` once on the host (or copy the
-credentials file). The archive key must be in the environment file:
+credentials file). Then store the archive key in the environment file:
+
+```sh
+whatsdrop config
+```
+
+It prompts for the key without echoing it, then for the account alias. On a
+rerun, values already in the env file are offered as defaults: press Enter to
+keep the existing key (shown as `[keep existing]`, never printed) or the
+existing alias. It writes `~/.config/whatsdrop/env` with mode `0600` (directory
+`0700`). Use `--account work` to set a non-primary alias, `--env-file PATH` for
+a custom location, or set `WHATSDROP_KEY` / `WHATSDROP_ACCOUNT` to skip the
+corresponding prompt. The file contains:
 
 ```sh
 # ~/.config/whatsdrop/env  (must be 0600)
@@ -287,9 +302,9 @@ WHATSDROP_KEY=<base64 archive key from the extension>
 WHATSDROP_ACCOUNT=primary
 ```
 
-On macOS and Linux the file must not be readable or writable by group or
-others; the MCP server rejects insecure files and reads only `WHATSDROP_*`
-keys.
+On Windows the default is `%APPDATA%\whatsdrop\env`. On macOS and Linux the file
+must not be readable or writable by group or others; the MCP server rejects
+insecure files and reads only `WHATSDROP_*` keys.
 
 A cron or agent wrapper can source the file (`set -a; . ~/.config/whatsdrop/env;
 set +a`) and then run `whatsdrop query ...` or `whatsdrop context ...`:

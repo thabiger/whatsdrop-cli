@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +22,8 @@ from .auth import (
 from .auth_flow import run_loopback_flow, run_paste_flow
 from .chats import ChatEntry, load_directory, select_chats
 from .config import (
+    ACCOUNT_RE,
+    DEFAULT_ACCOUNT,
     AuthConfig,
     DropboxConfig,
     Window,
@@ -36,7 +40,9 @@ from .context import (
     render_chunks_ndjson,
     render_chunks_text,
 )
+from .crypto import is_valid_key
 from .dropbox import DropboxClient
+from .env_file import default_env_path, read_env_file_unchecked, write_env_file
 from .errors import CliError, NoMatchesError, RemoteError, UsageError
 from .fetch import collect, plan_tasks
 from .media import export_media, write_manifest
@@ -232,6 +238,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--credentials-file", help="Dropbox credentials file (or WHATSDROP_CREDENTIALS)"
     )
     auth.add_argument("--timeout", type=float, default=60.0, help="HTTP timeout in seconds")
+
+    config = subparsers.add_parser(
+        "config", help="store the archive key and account in the CLI env file"
+    )
+    config.add_argument(
+        "--key",
+        help="archive encryption key, base64 32 bytes (or WHATSDROP_KEY; prompted if omitted)",
+    )
+    config.add_argument(
+        "--account",
+        help="account alias (or WHATSDROP_ACCOUNT; prompted if unset; default: existing value or primary)",
+    )
+    config.add_argument(
+        "--env-file",
+        help="env file path (default: next to the credentials file)",
+    )
 
     return parser
 
@@ -619,6 +641,63 @@ def _auth_revoke(args) -> int:
     return 0
 
 
+def _run_config(args) -> int:
+    env_path = Path(args.env_file).expanduser() if args.env_file else default_env_path()
+    existing = read_env_file_unchecked(env_path)
+
+    key = str(args.key or os.environ.get("WHATSDROP_KEY") or "").strip()
+    if not key:
+        existing_key = existing.get("WHATSDROP_KEY", "").strip()
+        if existing_key and not is_valid_key(existing_key):
+            existing_key = ""
+        if not sys.stdin.isatty():
+            if not existing_key:
+                raise UsageError(
+                    "archive key is required; pass --key, set WHATSDROP_KEY, or run interactively"
+                )
+            key = existing_key
+        else:
+            prompt = "Archive key (base64, 32 bytes)"
+            if existing_key:
+                prompt += " [keep existing]"
+            prompt += ": "
+            try:
+                key = getpass.getpass(prompt).strip()
+            except (EOFError, KeyboardInterrupt) as exc:
+                raise UsageError("archive key prompt aborted") from exc
+            if not key:
+                if not existing_key:
+                    raise UsageError("archive key is required")
+                key = existing_key
+    if not is_valid_key(key):
+        raise UsageError("encryption key must be 32 bytes encoded as base64")
+
+    account = (
+        str(args.account or "").strip() or str(os.environ.get("WHATSDROP_ACCOUNT") or "").strip()
+    )
+    if not account:
+        default_account = existing.get("WHATSDROP_ACCOUNT", "").strip() or DEFAULT_ACCOUNT
+        if sys.stdin.isatty():
+            try:
+                account = input(f"Account alias [{default_account}]: ").strip() or default_account
+            except (EOFError, KeyboardInterrupt) as exc:
+                raise UsageError("account alias prompt aborted") from exc
+        else:
+            account = default_account
+    if not ACCOUNT_RE.match(account):
+        raise UsageError("account alias may only contain letters, digits and . _ -")
+
+    try:
+        write_env_file(env_path, key=key, account=account)
+    except OSError as exc:
+        raise UsageError(f"could not write {env_path}: {exc}") from exc
+
+    mode = "" if os.name == "nt" else " (0600)"
+    print(f"whatsdrop: wrote {env_path}{mode}")
+    print(f"whatsdrop: account {account}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -626,6 +705,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "auth":
             return _run_auth(args)
+        if args.command == "config":
+            return _run_config(args)
         if args.command == "chats":
             return _run_chats(args)
         if args.command == "context":

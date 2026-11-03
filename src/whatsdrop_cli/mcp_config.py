@@ -5,14 +5,14 @@ from __future__ import annotations
 import json
 import os
 import re
-import stat
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 
 from .auth import resolve_credentials_path
 from .config import parse_context_before, parse_duration, parse_tz
-from .errors import CliError, UsageError
+from .env_file import load_env_file  # noqa: F401 (re-exported for existing callers)
+from .errors import CliError
 
 DEFAULT_LAST = "6h"
 DEFAULT_CONTEXT_BEFORE = "30m"
@@ -24,7 +24,6 @@ DEFAULT_CLI_TIMEOUT_SECONDS = 120.0
 DEFAULT_ACCOUNT = "primary"
 
 ACCOUNT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-ENV_KEY_PREFIX = "WHATSDROP_"
 
 CONFIG_KEYS = {
     "default_last",
@@ -74,44 +73,6 @@ def default_config_path() -> Path:
         SimpleNamespace(credentials_file=_env_text("WHATSDROP_CREDENTIALS"))
     )
     return credentials.parent / "mcp.json"
-
-
-def load_env_file(path: Path) -> dict[str, str]:
-    path = Path(path).expanduser()
-    try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except FileNotFoundError:
-        return {}
-    except OSError:
-        return {}
-
-    if os.name != "nt":
-        try:
-            mode = stat.S_IMODE(path.stat().st_mode)
-        except OSError:
-            return {}
-        if mode & 0o077:
-            raise UsageError(
-                f"env file {path} must not be readable or writable by group/others; "
-                f"run `chmod 600 {path}`"
-            )
-
-    values: dict[str, str] = {}
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line[7:].lstrip()
-        key, separator, value = line.partition("=")
-        key = key.strip()
-        if not separator or not key or not key.startswith(ENV_KEY_PREFIX):
-            continue
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-            value = value[1:-1]
-        values[key] = value
-    return values
 
 
 def load_settings() -> McpSettings:

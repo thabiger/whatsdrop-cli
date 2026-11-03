@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `whatsdrop config` stores the archive encryption key and account alias in the
+  private CLI environment file (`0600`; parent `0700`). It prompts for the key
+  when `--key` and `WHATSDROP_KEY` are absent and for the account alias when
+  unset. On a rerun it offers values already in the env file as defaults
+  (`[keep existing]` for the key) and preserves unrelated env entries.
+
 ## [0.2.0] - 2026-11-02
 
 ### Added
