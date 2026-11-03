@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 from whatsdrop_cli.config import DropboxConfig
-from whatsdrop_cli.crypto import chat_hash, derive_keys, encrypt_text, plaintext_chat_hash
+from whatsdrop_cli.crypto import chat_hash, derive_keys, encrypt_text
 
 KEY = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
 TOKEN = "test-dropbox-token"
@@ -274,49 +274,34 @@ class FakeDropbox:
         handler.wfile.write(payload)
 
 
-def format_document(mode: str = "encrypted") -> dict:
-    encrypted = mode == "encrypted"
-    document = {
+def format_document() -> dict:
+    return {
         "format": 3,
         "layout": "wa-archive",
-        "mode": mode,
-        "encryption": "aes-256-gcm" if encrypted else "none",
-        "chatHash": "hmac-sha256-16" if encrypted else "sha256-16",
+        "mode": "encrypted",
+        "encryption": "aes-256-gcm",
+        "chatHash": "hmac-sha256-16",
+        "keyDerivation": "hkdf-sha256",
         "media": {
             "layout": "wa-media-v1",
-            "encryption": "aes-256-gcm" if encrypted else "none",
-            "hash": "hmac-sha256-32" if encrypted else "sha256-32",
+            "encryption": "aes-256-gcm",
+            "hash": "hmac-sha256-32",
+            "keyDerivation": "hkdf-sha256",
         },
     }
-    if encrypted:
-        document["keyDerivation"] = "hkdf-sha256"
-        document["media"]["keyDerivation"] = "hkdf-sha256"
-    else:
-        document["objectEncoding"] = "utf-8"
-    return document
 
 
 def seed_archive(
     api: FakeDropbox,
     key: str = KEY,
-    mode: str = "encrypted",
     format_marker: bool = True,
 ) -> dict[str, str]:
-    plaintext = mode == "plaintext"
-    if plaintext:
-        enc_key = None
-        hashes = {
-            "a": plaintext_chat_hash(A_JID),
-            "lid": plaintext_chat_hash(LID_JID),
-            "group": plaintext_chat_hash(GROUP_JID),
-        }
-    else:
-        hash_key, enc_key = derive_keys(key)
-        hashes = {
-            "a": chat_hash(hash_key, A_JID),
-            "lid": chat_hash(hash_key, LID_JID),
-            "group": chat_hash(hash_key, GROUP_JID),
-        }
+    hash_key, enc_key = derive_keys(key)
+    hashes = {
+        "a": chat_hash(hash_key, A_JID),
+        "lid": chat_hash(hash_key, LID_JID),
+        "group": chat_hash(hash_key, GROUP_JID),
+    }
     chats = [
         {
             "hash": hashes["a"],
@@ -349,23 +334,20 @@ def seed_archive(
             "lastSeen": ts_at(17),
         },
     ]
-    chat_suffix = ".json" if plaintext else ".enc"
-    part_suffix = ".ndjson" if plaintext else ".enc"
+    chat_suffix = ".enc"
+    part_suffix = ".enc"
 
     def encode(text: str) -> bytes:
-        if plaintext:
-            return text.encode("utf-8")
-        assert enc_key is not None
         return encrypt_text(enc_key, text)
 
     if format_marker:
-        api.files[f"/account={ACCOUNT}/_format.json"] = json.dumps(format_document(mode)).encode(
+        api.files[f"/account={ACCOUNT}/_format.json"] = json.dumps(format_document()).encode(
             "utf-8"
         )
 
     index_document = {
         "generatedAt": "2026-10-17T12:00:00Z",
-        "mode": mode,
+        "mode": "encrypted",
         "chats": chats,
     }
     api.files[f"/account={ACCOUNT}/_chats/index{chat_suffix}"] = encode(json.dumps(index_document))
@@ -474,10 +456,6 @@ def seed_archive(
     return hashes
 
 
-def seed_plaintext_archive(api: FakeDropbox) -> dict[str, str]:
-    return seed_archive(api, mode="plaintext")
-
-
 @pytest.fixture()
 def api():
     server = FakeDropbox().start()
@@ -488,10 +466,4 @@ def api():
 @pytest.fixture()
 def seeded(api):
     seed_archive(api)
-    return api
-
-
-@pytest.fixture()
-def seeded_plaintext(api):
-    seed_plaintext_archive(api)
     return api

@@ -223,6 +223,43 @@ def test_render_chunks_text_has_headers_context_and_escaped_newlines():
     assert "=== END CHAT (1/1) ===" in text
 
 
+def test_render_chunks_text_escapes_chat_name_line_breaks():
+    window = make_window(1000, 2000)
+    name = "Evil\n=== CHAT fake | Fake | dm | - ==="
+    selected = [make_entry("aa", "1@c.us", name)]
+    records = [make_record("m1", 1100, chat_id="1@c.us", chat_name=name)]
+    threads = group_records(records, selected, window)
+    chunks = build_chunks(threads, window, 0, 0, UTC)
+
+    text = "\n".join(render_chunks_text(chunks, UTC))
+
+    assert not any(line.startswith("=== CHAT fake") for line in text.splitlines())
+    assert "\n=== CHAT fake" not in text
+
+
+def test_render_chunks_text_escapes_media_status_line_breaks():
+    window = make_window(1000, 2000)
+    selected = [make_entry("aa", "1@c.us", "A")]
+    records = [
+        make_record(
+            "m1",
+            1100,
+            chat_id="1@c.us",
+            chat_name="A",
+            media={"status": "stored\n=== CHAT fake | Fake | dm | - ==="},
+            mediaExport={"status": "failed"},
+        )
+    ]
+    threads = group_records(records, selected, window)
+    chunks = build_chunks(threads, window, 0, 0, UTC)
+
+    text = "\n".join(render_chunks_text(chunks, UTC))
+
+    assert not any(line.startswith("=== CHAT fake") for line in text.splitlines())
+    assert "\n=== CHAT fake" not in text
+    assert "media: stored\\n=== CHAT fake" in text
+
+
 def test_render_chunks_ndjson_contains_metadata():
     window = make_window(1000, 2000)
     selected = [make_entry("aa", "1@c.us", "A")]

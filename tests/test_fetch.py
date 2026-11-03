@@ -16,16 +16,16 @@ from whatsdrop_cli.errors import GuardError, NoMatchesError
 from whatsdrop_cli.fetch import collect, parse_part_name, plan_tasks
 
 
-def ctx(api, mode="encrypted", key=KEY, **overrides):
+def ctx(api, key=KEY, **overrides):
     base = api.endpoint
     cfg = make_cfg(
-        archive_key=key if mode == "encrypted" else "",
+        archive_key=key,
         api_base=f"{base}/2",
         content_base=f"{base}/2",
         token_url=f"{base}/oauth2/token",
         **overrides,
     )
-    codec = ArchiveCodec(mode, cfg.archive_key)
+    codec = ArchiveCodec(cfg.archive_key)
     client = DropboxClient(cfg)
     entries = load_directory(client, cfg, codec)
     return cfg, client, codec, entries
@@ -157,33 +157,6 @@ def test_part_selection_uses_intervals_and_legacy_anchor(seeded):
     ]
 
 
-def test_parse_part_name_accepts_mode_suffixes():
-    assert parse_part_name("part-100-200-0.ndjson", ".ndjson") == (100, 200, 0)
+def test_parse_part_name_accepts_enc_suffix():
     assert parse_part_name("part-100-200-0.enc", ".enc") == (100, 200, 0)
     assert parse_part_name("part-100-200-0.enc", ".ndjson") is None
-
-
-def test_plan_tasks_plaintext_uses_ndjson(seeded_plaintext):
-    cfg, client, codec, entries = ctx(seeded_plaintext, mode="plaintext")
-    chats = select_chats(entries, ["*Anna*"], [], [], [], codec)
-    anna = chats[0]
-    seeded_plaintext.files[
-        f"/account=primary/chat={anna.hash}/dt=2026-10-17/part-1792228800000-1792228800000-9.enc"
-    ] = b"not selected"
-    window = resolve_window("2026-10-17", "2026-10-17", None, cfg.tz)
-
-    tasks = plan_tasks(client, cfg, codec, chats, window)
-
-    assert len(tasks) == 4
-    assert all(task.key.endswith(".ndjson") for task in tasks)
-
-
-def test_collect_plaintext_dedupes(seeded_plaintext):
-    cfg, client, codec, entries = ctx(seeded_plaintext, mode="plaintext")
-    chats = select_chats(entries, ["*Anna*"], [], [], [], codec)
-    window = resolve_window("2026-10-16", "2026-10-17", None, cfg.tz)
-
-    records = collect(client, cfg, codec, plan_tasks(client, cfg, codec, chats, window), window)
-
-    assert [record["msgId"] for record in records] == ["A1", "A2"]
-    assert records[1]["text"] == "repaired copy"

@@ -1,7 +1,7 @@
 [project]
 name = "whatsdrop-cli"
-version = "0.1.0"
-description = "Query encrypted or plaintext WhatsDrop archives in Dropbox by name/number and time window"
+version = "0.2.0"
+description = "Query encrypted WhatsDrop archives in Dropbox by name/number and time window"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
@@ -28,8 +28,12 @@ dependencies = [
     "tzdata>=2025.2; sys_platform == 'win32'",
 ]
 
+[project.optional-dependencies]
+mcp = ["mcp>=2.3,<3"]
+
 [project.scripts]
 whatsdrop = "whatsdrop_cli.cli:main"
+whatsdrop-mcp = "whatsdrop_cli.mcp_server:main"
 
 [project.urls]
 Homepage = "https://github.com/thabiger/whatsdrop-cli"

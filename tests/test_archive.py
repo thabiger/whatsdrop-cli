@@ -1,4 +1,4 @@
-"""Archive mode detection and plaintext codec behaviour."""
+"""Archive format detection and encrypted codec behaviour."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from conftest import ACCOUNT, KEY, make_cfg, seed_archive
 
 from whatsdrop_cli.archive import (
     ENCRYPTED,
-    PLAINTEXT,
     ArchiveCodec,
     parse_format_marker,
     resolve_archive,
@@ -29,18 +28,15 @@ def ctx(api, key=KEY):
     return cfg, DropboxClient(cfg)
 
 
-def test_plaintext_archive_needs_no_key(api):
-    seed_archive(api, mode="plaintext")
+def test_plaintext_archive_is_rejected(api):
+    seed_archive(api)
+    api.files[f"/account={ACCOUNT}/_format.json"] = json.dumps(
+        {"format": 3, "layout": "wa-archive", "mode": "plaintext"}
+    ).encode()
     cfg, client = ctx(api, key="")
 
-    codec = resolve_archive(client, cfg)
-
-    assert codec.mode == PLAINTEXT
-    assert codec.version == 3
-    assert codec.is_plaintext
-    assert codec.part_suffix == ".ndjson"
-    assert codec.chat_suffix == ".json"
-    assert codec.media_suffix == ".bin"
+    with pytest.raises(RemoteError, match="plaintext archives are no longer supported"):
+        resolve_archive(client, cfg)
 
 
 def test_encrypted_archive_requires_key(api):
@@ -57,7 +53,6 @@ def test_encrypted_archive_with_key(api):
 
     codec = resolve_archive(client, cfg)
 
-    assert codec.mode == ENCRYPTED
     assert codec.version == 3
     assert codec.part_suffix == ".enc"
 
@@ -68,7 +63,6 @@ def test_missing_format_marker_is_legacy_encrypted(api):
 
     codec = resolve_archive(client, cfg)
 
-    assert codec.mode == ENCRYPTED
     assert codec.version == 2
 
 
@@ -83,7 +77,7 @@ def test_malformed_format_marker(api):
 
 def test_unsupported_format_version(api):
     seed_archive(api)
-    marker = {"format": 4, "layout": "wa-archive", "mode": "plaintext"}
+    marker = {"format": 4, "layout": "wa-archive", "mode": "encrypted"}
     api.files[f"/account={ACCOUNT}/_format.json"] = json.dumps(marker).encode()
     cfg, client = ctx(api)
 
@@ -108,16 +102,6 @@ def test_parse_format_marker_accepts_v2_without_mode():
     assert mode == ENCRYPTED
 
 
-def test_plaintext_codec_hashes_and_decoding():
-    codec = ArchiveCodec(PLAINTEXT)
-
-    assert codec.chat_hash("49171234567@c.us") == "35ade4c8763f23ab"
-    assert codec.decode_text(b'{"msgId": "A1"}\n') == '{"msgId": "A1"}\n'
-    assert codec.decode_media("chat=aa/dt=2026-10-17/media-bb.bin", b"raw") == b"raw"
-    with pytest.raises(ValueError, match="UTF-8"):
-        codec.decode_text(b"\xff")
-
-
 def test_invalid_encryption_key_is_a_usage_error():
     with pytest.raises(UsageError, match="must be 32 bytes"):
-        ArchiveCodec(ENCRYPTED, archive_key="YWJj")
+        ArchiveCodec(archive_key="YWJj")

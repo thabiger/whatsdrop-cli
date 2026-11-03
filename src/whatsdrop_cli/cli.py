@@ -1,4 +1,4 @@
-"""whatsdrop command line interface (encrypted or plaintext Dropbox archive)."""
+"""whatsdrop command line interface (encrypted Dropbox archive)."""
 
 from __future__ import annotations
 
@@ -43,9 +43,6 @@ from .media import export_media, write_manifest
 from .output import render, safe_cell, write_lines
 
 CHAT_HEADERS = ["NAME", "PHONE", "TYPE", "HASH", "CHAT ID"]
-PLAINTEXT_WARNING = (
-    "whatsdrop: warning: archive is unencrypted (plaintext); anyone with Dropbox access can read it"
-)
 
 
 def _add_window_arguments(parser: argparse.ArgumentParser) -> None:
@@ -72,7 +69,7 @@ def _add_window_arguments(parser: argparse.ArgumentParser) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="whatsdrop",
-        description="Query an encrypted or plaintext WhatsApp archive stored in a Dropbox app folder.",
+        description="Query an encrypted WhatsApp archive stored in a Dropbox app folder.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -243,8 +240,6 @@ def _open_archive(args):
     cfg = load_config(args)
     client = DropboxClient(cfg)
     codec = resolve_archive(client, cfg)
-    if codec.is_plaintext:
-        print(PLAINTEXT_WARNING, file=sys.stderr)
     return cfg, client, codec
 
 

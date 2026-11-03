@@ -5,6 +5,27 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-11-02
+
+### Added
+
+- Optional `mcp` extra and `whatsdrop-mcp` stdio server. The server exposes
+  read-only `list_chats` and `get_context` tools backed by the existing CLI.
+  It works with any MCP-compatible client and does not contact an AI service.
+
+### Removed
+
+- Plaintext archive support, including unkeyed SHA-256 path hashes and the
+  unencrypted-archive warning. Archives must now use the encrypted format;
+  plaintext format markers are rejected with a clear error.
+
+### Fixed
+
+- MCP text output now escapes line breaks and Unicode line separators from
+  archive fields, preventing fake chat headers in tool output.
+- The MCP server reports the effective account alias and rejects env files that
+  are readable or writable by group or others.
+
 ## [0.1.0] - 2026-10-31
 
 ### Added

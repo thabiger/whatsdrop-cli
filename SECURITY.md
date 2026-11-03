@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security fixes are provided for the latest `0.1.x` release. Pre-release or
+Security fixes are provided for the latest `0.2.x` release. Pre-release or
 unreleased development snapshots are not supported.
 
 ## Reporting a vulnerability
@@ -28,9 +28,9 @@ Security-relevant areas include:
 
 - Dropbox OAuth and refresh-token handling.
 - Credential storage permissions and revocation.
-- Archive mode detection, decryption and media path validation.
-- Plaintext archive handling and its unencrypted-archive warning.
-- Plaintext output and media export permissions.
+- Archive key environment-file permissions.
+- Archive format detection, decryption and media path validation.
+- Output and media export permissions.
 - Terminal control-character handling and CSV formula injection.
 - Dependency and release-pipeline integrity.
 

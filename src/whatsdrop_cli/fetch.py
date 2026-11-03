@@ -190,8 +190,7 @@ def collect(
         try:
             return task.key, codec.decode_text(payload)
         except (ValueError, InvalidTag) as exc:
-            action = "read" if codec.is_plaintext else "decrypt"
-            raise RemoteError(f"cannot {action} {task.key}: {exc}") from exc
+            raise RemoteError(f"cannot decrypt {task.key}: {exc}") from exc
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         payloads = list(pool.map(fetch, tasks))

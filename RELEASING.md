@@ -42,6 +42,7 @@ publishing and produce PyPI attestations.
 5. Run the full checks:
 
    ```sh
+   uv sync --extra mcp
    uv run pytest -q
    uv run ruff check .
    uv run ruff format --check .
@@ -79,8 +80,8 @@ publishing and produce PyPI attestations.
 1. Create and push the tag:
 
    ```sh
-   git tag -a v0.1.0 -m "whatsdrop-cli 0.1.0"
-   git push origin v0.1.0
+   git tag -a v0.2.0 -m "whatsdrop-cli 0.2.0"
+   git push origin v0.2.0
    ```
 
 2. The `Release` workflow builds the sdist/wheel, publishes to PyPI using

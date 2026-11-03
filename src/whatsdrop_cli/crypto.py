@@ -9,10 +9,6 @@ Contract:
   mediaHash = lowerhex(HMAC-SHA256(hashKey, b"media:" + msgId))[:32]
   object   = b"WAAR" | 0x01 | nonce(12) | AES-256-GCM ciphertext+tag (AAD = first 5 bytes)
   media    = b"WAMR" | 0x01 | nonce(12) | AES-256-GCM ciphertext+tag (AAD = header + path)
-
-Plaintext mode uses unkeyed SHA-256 path hashes:
-  chatHash  = lowerhex(SHA-256(chatId))[:16]
-  mediaHash = lowerhex(SHA-256(b"media:" + msgId))[:32]
 """
 
 from __future__ import annotations
@@ -75,14 +71,6 @@ def chat_hash(hash_key: bytes, chat_id: str) -> str:
 
 def media_hash(hash_key: bytes, msg_id: str) -> str:
     return hmac.new(hash_key, f"media:{msg_id}".encode(), hashlib.sha256).hexdigest()[:32]
-
-
-def plaintext_chat_hash(chat_id: str) -> str:
-    return hashlib.sha256(str(chat_id).encode("utf-8")).hexdigest()[:16]
-
-
-def plaintext_media_hash(msg_id: str) -> str:
-    return hashlib.sha256(f"media:{msg_id}".encode()).hexdigest()[:32]
 
 
 def decrypt_text(enc_key: bytes, envelope: bytes) -> str:

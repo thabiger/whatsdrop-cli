@@ -18,7 +18,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv sync --locked
+      - run: uv sync --locked --extra mcp
       - run: uv run pytest -q
       - run: uv build
       - run: uvx twine check dist/*

@@ -67,8 +67,7 @@ def load_directory(client, cfg: DropboxConfig, codec: ArchiveCodec) -> list[Chat
         try:
             document = json.loads(codec.decode_text(payload))
         except (ValueError, InvalidTag, json.JSONDecodeError) as exc:
-            action = "read" if codec.is_plaintext else "decrypted"
-            raise RemoteError(f"chat index could not be {action}: {exc}") from exc
+            raise RemoteError(f"chat index could not be decrypted: {exc}") from exc
         if not isinstance(document, dict):
             raise RemoteError("chat index has an invalid format")
         entries = [_entry_from_document(item) for item in document.get("chats", [])]

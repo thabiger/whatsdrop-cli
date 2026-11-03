@@ -9,7 +9,7 @@ from datetime import timezone
 import pytest
 
 from whatsdrop_cli.media import write_manifest
-from whatsdrop_cli.output import render_csv, render_text, write_lines
+from whatsdrop_cli.output import escape_text, render_csv, render_text, safe_cell, write_lines
 
 
 def make_record(**overrides) -> dict:
@@ -40,6 +40,26 @@ def test_render_text_escapes_control_characters():
     assert "\x00" not in output
     assert "\x07" not in output
     assert "line1\\nline2" in output
+
+
+def test_safe_cell_replaces_line_breaks_and_separators():
+    value = "a\nb\rc\td\u2028e\u2029f"
+
+    cell = safe_cell(value)
+
+    assert cell == "a b c d e f"
+    assert "\n" not in cell
+    assert "\r" not in cell
+    assert "\u2028" not in cell
+    assert "\u2029" not in cell
+
+
+def test_escape_text_escapes_unicode_line_separators():
+    escaped = escape_text("a\u2028b\u2029c")
+
+    assert escaped == "a\\u2028b\\u2029c"
+    assert "\u2028" not in escaped
+    assert "\u2029" not in escaped
 
 
 def test_render_csv_prefixes_formula_cells():

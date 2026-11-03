@@ -1,4 +1,4 @@
-"""Download, decode or decrypt, and export full-resolution media."""
+"""Download, decrypt, and export full-resolution media."""
 
 from __future__ import annotations
 
@@ -144,16 +144,16 @@ def export_media(
                 entry["status"] = "failed"
                 entry["error"] = "media object not found"
                 return entry
-            plaintext = codec.decode_media(relative, payload)
-            if isinstance(expected_size, (int, float)) and len(plaintext) != int(expected_size):
+            decoded = codec.decode_media(relative, payload)
+            if isinstance(expected_size, (int, float)) and len(decoded) != int(expected_size):
                 raise ValueError("media size mismatch")
             expected_hash = media.get("sha256")
-            if expected_hash and hashlib.sha256(plaintext).hexdigest() != str(expected_hash):
+            if expected_hash and hashlib.sha256(decoded).hexdigest() != str(expected_hash):
                 raise ValueError("media sha256 mismatch")
-            if len(plaintext) > max_bytes:
+            if len(decoded) > max_bytes:
                 entry["error"] = "media exceeds size limit"
                 return entry
-            path = _write_media(directory, record, plaintext, media.get("mime"))
+            path = _write_media(directory, record, decoded, media.get("mime"))
             entry.update({"status": "exported", "file": str(path)})
         except (ValueError, InvalidTag, OSError) as exc:
             entry["status"] = "failed"

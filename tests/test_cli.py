@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 
 import pytest
-from conftest import ACCOUNT, APP_KEY, KEY, REFRESH_TOKEN, TOKEN
+from conftest import ACCOUNT, APP_KEY, KEY, REFRESH_TOKEN, TOKEN, seed_archive
 
+from whatsdrop_cli import __version__
 from whatsdrop_cli.auth import Credentials, save_credentials
 from whatsdrop_cli.cli import main
 from whatsdrop_cli.crypto import chat_hash, derive_keys
@@ -17,13 +18,6 @@ def _configure(monkeypatch, api, token=TOKEN, key=KEY):
     monkeypatch.setenv("WHATSDROP_KEY", key)
     monkeypatch.setenv("WHATSDROP_ACCOUNT", ACCOUNT)
     monkeypatch.setenv("WHATSDROP_TEST_DROPBOX_BASE", api.endpoint)
-
-
-def _configure_plaintext(monkeypatch, api):
-    monkeypatch.setenv("WHATSDROP_DROPBOX_TOKEN", TOKEN)
-    monkeypatch.setenv("WHATSDROP_ACCOUNT", ACCOUNT)
-    monkeypatch.setenv("WHATSDROP_TEST_DROPBOX_BASE", api.endpoint)
-    monkeypatch.delenv("WHATSDROP_KEY", raising=False)
 
 
 def _query(*extra, tz="UTC"):
@@ -218,38 +212,20 @@ def test_wrong_encryption_key(seeded, monkeypatch):
     assert code == 5
 
 
-def test_query_plaintext_without_key(seeded_plaintext, monkeypatch, capsys):
-    _configure_plaintext(monkeypatch, seeded_plaintext)
-    code = _query("--name", "*Anna*", "--from", "2026-10-16", "--to", "2026-10-17")
+def test_plaintext_archive_is_rejected(api, monkeypatch, capsys):
+    seed_archive(api)
+    api.files[f"/account={ACCOUNT}/_format.json"] = json.dumps(
+        {"format": 3, "layout": "wa-archive", "mode": "plaintext"}
+    ).encode()
+    _configure(monkeypatch, api)
 
-    assert code == 0
-    records = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
-    assert [record["msgId"] for record in records] == ["A1", "A2"]
-    assert records[1]["text"] == "repaired copy"
-
-
-def test_chats_plaintext_warning_is_not_suppressed_by_quiet(seeded_plaintext, monkeypatch, capsys):
-    _configure_plaintext(monkeypatch, seeded_plaintext)
     code = main(["chats", "--quiet"])
 
-    assert code == 0
-    captured = capsys.readouterr()
-    assert "Anna Schmidt" in captured.out
-    assert "archive is unencrypted (plaintext)" in captured.err
-
-
-def test_plaintext_ignores_a_valid_key(seeded_plaintext, monkeypatch, capsys):
-    _configure(monkeypatch, seeded_plaintext, key=KEY)
-    code = _query("--name", "*Anna*", "--from", "2026-10-17", "--to", "2026-10-17")
-
-    assert code == 0
-    records = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
-    assert [record["msgId"] for record in records] == ["A2"]
+    assert code == 5
+    assert "plaintext archives are no longer supported" in capsys.readouterr().err
 
 
 def test_legacy_archive_without_format_marker(api, monkeypatch, capsys):
-    from conftest import seed_archive
-
     seed_archive(api, format_marker=False)
     _configure(monkeypatch, api)
     code = _query("--name", "*Anna*", "--from", "2026-10-17", "--to", "2026-10-17")
@@ -292,19 +268,6 @@ def test_midnight_window_downloads_only_overlapping_parts(seeded, monkeypatch, c
     assert [record["msgId"] for record in records] == ["A1"]
     part_downloads = [key for key in seeded.download_calls if "/chat=" in key]
     assert len(part_downloads) == 1, part_downloads
-
-
-def test_context_plaintext_without_key(seeded_plaintext, monkeypatch, capsys):
-    _configure_plaintext(monkeypatch, seeded_plaintext)
-    code = _context("--from", "2026-10-16", "--to", "2026-10-17")
-
-    assert code == 0
-    chunks = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
-    assert {chunk["chat"]["name"] for chunk in chunks} == {
-        "Anna Schmidt",
-        "Bob LID",
-        "Family Group",
-    }
 
 
 def test_context_groups_by_chat(seeded, monkeypatch, capsys):
@@ -487,7 +450,7 @@ def test_version(capsys):
         main(["--version"])
 
     assert error.value.code == 0
-    assert "0.1.0" in capsys.readouterr().out
+    assert __version__ in capsys.readouterr().out
 
 
 def _auth_credentials(tmp_path):

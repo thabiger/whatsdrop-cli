@@ -6,19 +6,18 @@ from conftest import A_JID, GROUP_JID, KEY, LID_JID, make_cfg
 
 from whatsdrop_cli.archive import ArchiveCodec
 from whatsdrop_cli.chats import ChatEntry, load_directory, select_chats
-from whatsdrop_cli.crypto import plaintext_chat_hash
 from whatsdrop_cli.dropbox import DropboxClient
 
 
-def ctx(api, mode="encrypted", key=KEY):
+def ctx(api, key=KEY):
     base = api.endpoint
     cfg = make_cfg(
-        archive_key=key if mode == "encrypted" else "",
+        archive_key=key,
         api_base=f"{base}/2",
         content_base=f"{base}/2",
         token_url=f"{base}/oauth2/token",
     )
-    codec = ArchiveCodec(mode, cfg.archive_key)
+    codec = ArchiveCodec(cfg.archive_key)
     return cfg, DropboxClient(cfg), codec
 
 
@@ -38,25 +37,6 @@ def test_load_directory_from_index(seeded):
 def test_load_directory_fallback_scan(seeded):
     cfg, client, codec = ctx(seeded)
     del seeded.files["/account=primary/_chats/index.enc"]
-
-    entries = load_directory(client, cfg, codec)
-    assert len(entries) == 3
-    assert any(entry.chat_name == "Anna Schmidt" for entry in entries)
-
-
-def test_load_plaintext_directory_from_index(seeded_plaintext):
-    cfg, client, codec = ctx(seeded_plaintext, mode="plaintext")
-    entries = load_directory(client, cfg, codec)
-
-    assert len(entries) == 3
-    anna = next(entry for entry in entries if entry.chat_id == A_JID)
-    assert anna.hash == plaintext_chat_hash(A_JID)
-    assert anna.chat_name == "Anna Schmidt"
-
-
-def test_load_plaintext_directory_fallback_scan(seeded_plaintext):
-    cfg, client, codec = ctx(seeded_plaintext, mode="plaintext")
-    del seeded_plaintext.files["/account=primary/_chats/index.json"]
 
     entries = load_directory(client, cfg, codec)
     assert len(entries) == 3
@@ -103,16 +83,6 @@ def test_unknown_jid_synthesizes_entry(seeded):
     assert len(selected) == 1
     assert selected[0].hash == codec.chat_hash(unknown)
     assert selected[0].chat_name == "unknown"
-
-
-def test_plaintext_unknown_jid_uses_sha256(seeded_plaintext):
-    cfg, client, codec = ctx(seeded_plaintext, mode="plaintext")
-    entries = load_directory(client, cfg, codec)
-
-    unknown = "49111111111@c.us"
-    selected = select_chats(entries, [], [], [], [unknown], codec)
-
-    assert selected[0].hash == plaintext_chat_hash(unknown)
 
 
 def test_no_match_returns_empty(seeded):

@@ -209,7 +209,7 @@ def _media_annotation(record: dict) -> str:
         return f" (file: {_quote_path(file)})"
 
     media = record.get("media") if isinstance(record.get("media"), dict) else {}
-    status = str(media.get("status") or "")
+    status = _escape_inline(media.get("status") or "")
     if status and status != "stored":
         return f" (media: {status})"
     if export.get("status") == "failed":

@@ -10,7 +10,7 @@ import re
 from datetime import datetime, tzinfo
 
 BASE64_PREVIEW_RE = re.compile(r"^[A-Za-z0-9+/=\s]{200,}$")
-CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u2028\u2029]")
 
 MEDIA_TYPES = {
     "media",
@@ -66,13 +66,21 @@ def record_body(record: dict) -> str:
 def escape_text(value: object) -> str:
     """Escape control characters for safe terminal/text output."""
     text = str(value)
-    text = text.replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t")
+    text = (
+        text.replace("\\", "\\\\")
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
+        .replace("\t", "\\t")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
     return CONTROL_RE.sub("\ufffd", text)
 
 
 def safe_cell(value: object) -> str:
-    """Replace control characters in table cells."""
-    return CONTROL_RE.sub(" ", str(value))
+    """Replace line breaks and control characters in table cells."""
+    text = str(value).replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    return CONTROL_RE.sub(" ", text)
 
 
 def _csv_safe(value: object) -> str:
