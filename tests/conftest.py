@@ -15,6 +15,14 @@ import pytest
 from whatsdrop_cli.config import DropboxConfig
 from whatsdrop_cli.crypto import chat_hash, derive_keys, encrypt_text
 
+
+@pytest.fixture(autouse=True)
+def _isolate_config_home(tmp_path_factory, monkeypatch):
+    config_home = tmp_path_factory.mktemp("config-home")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    monkeypatch.setenv("APPDATA", str(config_home))
+
+
 KEY = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
 TOKEN = "test-dropbox-token"
 REFRESH_TOKEN = "test-refresh-token"

@@ -42,7 +42,7 @@ from .context import (
 )
 from .crypto import is_valid_key
 from .dropbox import DropboxClient
-from .env_file import default_env_path, read_env_file_unchecked, write_env_file
+from .env_file import default_env_path, load_env_file, read_env_file_unchecked, write_env_file
 from .errors import CliError, NoMatchesError, RemoteError, UsageError
 from .fetch import collect, plan_tasks
 from .media import export_media, write_manifest
@@ -698,11 +698,18 @@ def _run_config(args) -> int:
     return 0
 
 
+def _attach_env_file(args) -> None:
+    """Attach CLI env file values (flags and the shell environment still win)."""
+    args.env_file_values = load_env_file(default_env_path(args))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
     try:
+        if args.command in {"chats", "query", "context"}:
+            _attach_env_file(args)
         if args.command == "auth":
             return _run_auth(args)
         if args.command == "config":

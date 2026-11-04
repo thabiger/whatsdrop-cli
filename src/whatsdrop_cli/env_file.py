@@ -15,8 +15,8 @@ ENV_KEY_PREFIX = "WHATSDROP_"
 MANAGED_KEYS = ("WHATSDROP_KEY", "WHATSDROP_ACCOUNT")
 
 
-def default_env_path() -> Path:
-    credentials = resolve_credentials_path(SimpleNamespace(credentials_file=None))
+def default_env_path(args=None) -> Path:
+    credentials = resolve_credentials_path(args or SimpleNamespace(credentials_file=None))
     return credentials.parent / "env"
 
 

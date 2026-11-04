@@ -100,15 +100,19 @@ def _dropbox_urls(base: str) -> dict:
 
 
 def resolve_auth(args) -> AuthConfig:
-    """Resolve Dropbox credentials from flags, env, then the local file.
+    """Resolve Dropbox credentials from flags, env, the env file, then the local file.
 
-    Precedence: CLI flag > environment variable > credentials file. An explicit
-    access or refresh token (flag/env) disables file lookups so secrets injected
-    by a host are never overwritten.
+    Precedence: CLI flag > environment variable > private env file > credentials
+    file. An explicit access or refresh token (flag/env) disables file lookups so
+    secrets injected by a host are never overwritten.
     """
 
+    env_file_values = getattr(args, "env_file_values", {})
+
     def value(flag: str, env: str) -> str:
-        return str(getattr(args, flag, None) or os.environ.get(env) or "").strip()
+        return str(
+            getattr(args, flag, None) or os.environ.get(env) or env_file_values.get(env) or ""
+        ).strip()
 
     app_key = value("dropbox_app_key", "WHATSDROP_DROPBOX_APP_KEY") or None
     token = value("dropbox_token", "WHATSDROP_DROPBOX_TOKEN") or None
@@ -173,8 +177,12 @@ def load_config(args) -> DropboxConfig:
             "WHATSDROP_DROPBOX_APP_KEY) for testing."
         )
 
+    env_file_values = getattr(args, "env_file_values", {})
+
     def value(flag: str, env: str) -> str:
-        return str(getattr(args, flag, None) or os.environ.get(env) or "").strip()
+        return str(
+            getattr(args, flag, None) or os.environ.get(env) or env_file_values.get(env) or ""
+        ).strip()
 
     archive_key = value("key", "WHATSDROP_KEY")
 

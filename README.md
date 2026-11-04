@@ -303,11 +303,14 @@ WHATSDROP_ACCOUNT=primary
 ```
 
 On Windows the default is `%APPDATA%\whatsdrop\env`. On macOS and Linux the file
-must not be readable or writable by group or others; the MCP server rejects
-insecure files and reads only `WHATSDROP_*` keys.
+must not be readable or writable by group or others; the CLI and MCP server
+reject insecure files and read only `WHATSDROP_*` keys. `chats`, `query`, and
+`context` load the file automatically, so nothing needs to be exported in your
+shell; explicit flags and shell environment variables take precedence. The file
+next to a custom `--credentials-file` is used when one is passed.
 
-A cron or agent wrapper can source the file (`set -a; . ~/.config/whatsdrop/env;
-set +a`) and then run `whatsdrop query ...` or `whatsdrop context ...`:
+A cron or agent wrapper can still source the file (`set -a; .
+~/.config/whatsdrop/env; set +a`) before running other tools:
 
 ```sh
 whatsdrop context --last 6h --context-before 30m --max-chars 12000 --format text

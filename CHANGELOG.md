@@ -14,6 +14,10 @@ and this project follows [Semantic Versioning](https://semver.org/).
   when `--key` and `WHATSDROP_KEY` are absent and for the account alias when
   unset. On a rerun it offers values already in the env file as defaults
   (`[keep existing]` for the key) and preserves unrelated env entries.
+- `chats`, `query`, and `context` load the private CLI environment file
+  automatically, so `whatsdrop config` values are used without exporting them.
+  Explicit flags and shell environment variables still take precedence, and the
+  env file next to a custom `--credentials-file` is used.
 
 ## [0.2.0] - 2026-11-02
 

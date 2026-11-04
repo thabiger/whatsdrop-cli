@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 from conftest import ACCOUNT, APP_KEY, KEY, REFRESH_TOKEN, TOKEN, seed_archive
@@ -508,3 +509,77 @@ def test_revoke_deletes_credentials_when_token_already_invalid(
     assert code == 0
     assert not path.exists()
     assert "already invalid" in capsys.readouterr().err
+
+
+WRONG_KEY = "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc="
+
+
+def _use_env_file(monkeypatch, tmp_path, text):
+    monkeypatch.delenv("WHATSDROP_KEY", raising=False)
+    monkeypatch.delenv("WHATSDROP_ACCOUNT", raising=False)
+    monkeypatch.setenv("WHATSDROP_CREDENTIALS", str(tmp_path / "credentials.json"))
+    path = tmp_path / "env"
+    path.write_text(text, encoding="utf-8")
+    path.chmod(0o600)
+    return path
+
+
+def test_env_file_supplies_key_and_account(seeded, monkeypatch, tmp_path):
+    monkeypatch.setenv("WHATSDROP_DROPBOX_TOKEN", TOKEN)
+    monkeypatch.setenv("WHATSDROP_TEST_DROPBOX_BASE", seeded.endpoint)
+    _use_env_file(
+        monkeypatch,
+        tmp_path,
+        f"WHATSDROP_KEY={KEY}\nWHATSDROP_ACCOUNT={ACCOUNT}\n",
+    )
+
+    assert main(["chats", "--quiet"]) == 0
+
+
+def test_shell_environment_wins_over_env_file(seeded, monkeypatch, tmp_path):
+    _use_env_file(
+        monkeypatch,
+        tmp_path,
+        f"WHATSDROP_KEY={WRONG_KEY}\nWHATSDROP_ACCOUNT=missing\n",
+    )
+    _configure(monkeypatch, seeded)
+
+    assert main(["chats", "--quiet"]) == 0
+
+
+def test_flags_win_over_env_file(seeded, monkeypatch, tmp_path):
+    monkeypatch.setenv("WHATSDROP_DROPBOX_TOKEN", TOKEN)
+    monkeypatch.setenv("WHATSDROP_TEST_DROPBOX_BASE", seeded.endpoint)
+    _use_env_file(
+        monkeypatch,
+        tmp_path,
+        f"WHATSDROP_KEY={WRONG_KEY}\nWHATSDROP_ACCOUNT=missing\n",
+    )
+
+    assert main(["chats", "--quiet", "--key", KEY, "--account", ACCOUNT]) == 0
+
+
+def test_env_file_follows_credentials_file(seeded, monkeypatch, tmp_path):
+    credentials = tmp_path / "custom" / "credentials.json"
+    env_file = credentials.parent / "env"
+    env_file.parent.mkdir()
+    env_file.write_text(f"WHATSDROP_KEY={KEY}\nWHATSDROP_ACCOUNT={ACCOUNT}\n", encoding="utf-8")
+    env_file.chmod(0o600)
+    monkeypatch.delenv("WHATSDROP_KEY", raising=False)
+    monkeypatch.delenv("WHATSDROP_ACCOUNT", raising=False)
+    monkeypatch.delenv("WHATSDROP_CREDENTIALS", raising=False)
+    monkeypatch.setenv("WHATSDROP_DROPBOX_TOKEN", TOKEN)
+    monkeypatch.setenv("WHATSDROP_TEST_DROPBOX_BASE", seeded.endpoint)
+
+    assert main(["chats", "--quiet", "--credentials-file", str(credentials)]) == 0
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permissions")
+def test_insecure_env_file_is_rejected(seeded, monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("WHATSDROP_DROPBOX_TOKEN", TOKEN)
+    monkeypatch.setenv("WHATSDROP_TEST_DROPBOX_BASE", seeded.endpoint)
+    path = _use_env_file(monkeypatch, tmp_path, f"WHATSDROP_KEY={KEY}\n")
+    path.chmod(0o644)
+
+    assert main(["chats", "--quiet"]) == 2
+    assert "must not be readable or writable" in capsys.readouterr().err

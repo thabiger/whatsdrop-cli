@@ -30,7 +30,8 @@ class ArchiveCodec:
         self.version = version
         if not archive_key:
             raise UsageError(
-                "archive is encrypted; encryption key required (--key or WHATSDROP_KEY)"
+                "archive is encrypted; encryption key required "
+                "(--key, WHATSDROP_KEY, or `whatsdrop config`)"
             )
         try:
             self._hash_key, self._enc_key = derive_keys(archive_key)
